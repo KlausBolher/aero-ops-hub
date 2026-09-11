@@ -32,7 +32,7 @@
   --font-mono:'JetBrains Mono',ui-monospace,monospace;
   --font-hand:'Kalam','Comic Sans MS',cursive;
   /* module accents */
-  --m-sqcdpte:#0A1E3D; --m-surv:#0E6E7C; --m-nc:#A23B2E; --m-future:#97989A;
+  --m-sqcdpte:#0A1E3D; --m-surv:#0E6E7C; --m-nc:#A23B2E; --m-train:#6B4FA0; --m-future:#97989A;
   /* NC criticality levels (P-1021 §5.4: 1=yellow, 2=orange, 3=red) */
   --lvl2-bg:#FFE1C2; --lvl2-ink:#9A4B00;
 }
@@ -48,7 +48,7 @@
     --prog-3:#123822; --prog-3-ink:#8FE0AE;
     --prog-4:#2E9E5B; --prog-4-ink:#08150D;
     --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -10px rgba(0,0,0,.6);
-    --m-sqcdpte:#4A6FA5; --m-surv:#2FB4C4; --m-nc:#E07A5F; --m-future:#7C8598;
+    --m-sqcdpte:#4A6FA5; --m-surv:#2FB4C4; --m-nc:#E07A5F; --m-train:#9B7FD4; --m-future:#7C8598;
     --lvl2-bg:#4A2A0F; --lvl2-ink:#F5B77A;
   }
 }
@@ -63,7 +63,7 @@
   --prog-3:#123822; --prog-3-ink:#8FE0AE;
   --prog-4:#2E9E5B; --prog-4-ink:#08150D;
   --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -10px rgba(0,0,0,.6);
-  --m-sqcdpte:#4A6FA5; --m-surv:#2FB4C4; --m-nc:#E07A5F; --m-future:#7C8598;
+  --m-sqcdpte:#4A6FA5; --m-surv:#2FB4C4; --m-nc:#E07A5F; --m-train:#9B7FD4; --m-future:#7C8598;
   --lvl2-bg:#4A2A0F; --lvl2-ink:#F5B77A;
 }
 *{box-sizing:border-box;}
@@ -503,6 +503,7 @@ const MODULES = [
   {id:'sqcdpte', name:'SQCDPTE Live Board', short:'SQ', color:'var(--m-sqcdpte)', desc:'Gestion visuelle quotidienne Safety / Quality / Cost / Delivery / People / Training / Environment.'},
   {id:'surv',    name:'Surveillances Opérationnelles', short:'SO', color:'var(--m-surv)', desc:'Questionnaires d’audit, planification par thème et surveyor, KPI sur les non-conformités.'},
   {id:'nc',      name:'Non-Conformités', short:'NC', color:'var(--m-nc)', desc:'Déclaration, analyse de cause, actions correctives et vérification d’efficacité (P-1021).'},
+  {id:'train',   name:'Formations', short:'FO', color:'var(--m-train)', desc:'Catalogue de compétences, suivi de qualification et matrice — aligné F-720-005 / P-721.'},
 ];
 
 /* =========================================================================
@@ -642,6 +643,7 @@ function ensureModuleSubscriptions(){
   if(hasAccess('sqcdpte') && sqSubsProj!==pid) sqSubscribe(pid);
   if(hasAccess('surv') && survSubsProj!==pid) svSubscribe(pid);
   if(hasAccess('nc') && ncSubsProj!==pid) ncSubscribe(pid);
+  if(hasAccess('train') && trainSubsProj!==pid) trSubscribe(pid);
   if(myAccess.isAdmin) adminSubscribe();
 }
 function renderProjectPicker(){
@@ -665,6 +667,7 @@ function railCounts(){
     sqcdpte: state.sqcdpte ? Object.values(state.sqcdpte.actions||[]).filter(a=>!a.closingDate).length : null,
     surv: state.surv ? (state.surv.planning||[]).filter(p=>p.status==='planned').length : null,
     nc: state.nc ? (state.nc.records||[]).filter(r=>r.status!=='closed').length : null,
+    train: state.train ? state.train.records.filter(r=>{ const c=trComputeStatus(r.result==='L'||r.result==='N'?r:trLatestRecord(r.employeeCode,r.trainingCode)); return c && c.status==='Expired'; }).length : null,
   };
 }
 function renderRail(){
@@ -695,6 +698,7 @@ function renderMain(){
   if(state.route==='sqcdpte'){ if(!hasAccess('sqcdpte')){ main.innerHTML = accessDeniedHtml(); return; } mountSqcdpte(main); return; }
   if(state.route==='surv'){ if(!hasAccess('surv')){ main.innerHTML = accessDeniedHtml(); return; } mountSurv(main); return; }
   if(state.route==='nc'){ if(!hasAccess('nc')){ main.innerHTML = accessDeniedHtml(); return; } mountNc(main); return; }
+  if(state.route==='train'){ if(!hasAccess('train')){ main.innerHTML = accessDeniedHtml(); return; } mountTrain(main); return; }
   if(state.route==='admin'){ if(!myAccess.isAdmin){ main.innerHTML = accessDeniedHtml(); return; } mountAdmin(main); return; }
   main.innerHTML = `<div class="view-pad">Module inconnu.</div>`;
 }
@@ -724,7 +728,7 @@ function renderHome(){
   }
   grid.innerHTML = accessibleModules.map(m=>{
     const cnt = counts[m.id];
-    const statLabel = m.id==='sqcdpte' ? 'actions ouvertes' : m.id==='surv' ? 'surveillances planifiées' : 'NC ouvertes';
+    const statLabel = m.id==='sqcdpte' ? 'actions ouvertes' : m.id==='surv' ? 'surveillances planifiées' : m.id==='nc' ? 'NC ouvertes' : 'qualifications expirées';
     return `<div class="mcard clickable" style="--mc:${m.color}" data-route="${m.id}">
       <div class="mhead"><div class="micon">${esc(m.short)}</div><div class="mname">${esc(m.name)}</div></div>
       <div class="mdesc">${esc(m.desc)}</div>
@@ -738,7 +742,7 @@ function renderHome(){
     </div>` : '') + `
     <div class="mcard soon" style="--mc:var(--m-future)">
       <div class="mhead"><div class="micon" style="background:var(--m-future)">+</div><div class="mname">Prochain outil<span class="badge-soon">à venir</span></div></div>
-      <div class="mdesc">Compétences &amp; habilitations, plan d’audits fournisseurs, tableau de bord multi-projets… — dis-moi lequel tu veux ensuite.</div>
+      <div class="mdesc">Plan d’audits fournisseurs, tableau de bord multi-projets… — dis-moi lequel tu veux ensuite.</div>
     </div>`;
   grid.querySelectorAll('.mcard.clickable').forEach(c=>c.addEventListener('click', ()=>goto(c.dataset.route)));
 }
@@ -1292,12 +1296,14 @@ function svCycleQual(surveyorId, famCode){
   s.quals = Object.assign({}, s.quals, {[famCode]:next});
   renderSurvBody();
   if(state.db) ensureUpdate(state.db.doc('surv_surveyors/'+surveyorId), {quals:s.quals});
+  trMirrorSurveyorQual(s.name, famCode, next);
 }
 function svSetQual(surveyorId, famCode, level){
   const s = sv().surveyors.find(x=>x.id===surveyorId); if(!s) return;
   s.quals = Object.assign({}, s.quals, {[famCode]:level});
   renderSurvBody();
   if(state.db) ensureUpdate(state.db.doc('surv_surveyors/'+surveyorId), {quals:s.quals});
+  trMirrorSurveyorQual(s.name, famCode, level);
 }
 function svDeleteSurveyor(id){
   if(!confirm('Retirer ce surveillant du registre ?')) return;
@@ -2721,6 +2727,334 @@ function ncWireDetail(doc, readOnly, level){
 }
 
 /* =========================================================================
+   MODULE 4 — FORMATIONS  (F-720-005 Competency Matrix / P-721 aligned)
+   ========================================================================= */
+const TRAIN_RESULTS = ['N','L','X','Q','S','V'];
+const TRAIN_RESULT_LABEL = {N:'Besoin identifié', L:'Formation en cours', X:'Complété / compétence acquise', Q:'Qualifié — opérateur', S:'Qualifié — inspecteur qualité', V:'Validé (poste / processus)'};
+const TRAIN_CATEGORIES = ['Job Validation','Special Process','Non-Special Process','Specific Competency','HSE'];
+const TRAIN_POSITIONS = ['Structural Assembler','Electrical Assembler','Quality Inspector','Line/Ramp Mechanic'];
+const TRAIN_CATALOG_SEED = [
+  {code:'JOB-STR', name:'Position Validation — Structural Assembler', category:'Job Validation', type:'Mentoring', validityMonths:null, passingScore:null},
+  {code:'JOB-ELEC', name:'Position Validation — Electrical Assembler', category:'Job Validation', type:'Mentoring', validityMonths:null, passingScore:null},
+  {code:'JOB-QUA', name:'Position Validation — Quality Inspector', category:'Job Validation', type:'Mentoring', validityMonths:null, passingScore:null},
+  {code:'JOB-MEC', name:'Position Validation — Line/Ramp Mechanic', category:'Job Validation', type:'Mentoring', validityMonths:null, passingScore:null},
+  {code:'STR-01', name:'Drilling, Reaming & Riveting', category:'Special Process', type:'Workshop/OJT', validityMonths:24, passingScore:85},
+  {code:'STR-02', name:'Torque & Fastening Procedures', category:'Special Process', type:'Workshop', validityMonths:24, passingScore:85},
+  {code:'STR-03', name:'Sealant Application & Corrosion Protection', category:'Special Process', type:'Workshop', validityMonths:24, passingScore:85},
+  {code:'ELEC-01', name:'EWIS Installation & Routing', category:'Special Process', type:'Classroom', validityMonths:24, passingScore:85},
+  {code:'ELEC-02', name:'Wire/Connector Termination & Continuity Testing', category:'Special Process', type:'Workshop/OJT', validityMonths:24, passingScore:85},
+  {code:'ELEC-03', name:'Electrical Bonding & Grounding', category:'Special Process', type:'Workshop', validityMonths:24, passingScore:85},
+  {code:'MEC-02', name:'Line Servicing & Ground Handling Procedures', category:'Non-Special Process', type:'On-the-Job', validityMonths:24, passingScore:80},
+  {code:'HF-01', name:'Human Factors', category:'Specific Competency', type:'Classroom', validityMonths:12, passingScore:80},
+  {code:'QUA-01', name:'Required Inspection Items (RII)', category:'Specific Competency', type:'On-the-Job', validityMonths:24, passingScore:90},
+  {code:'QUA-02', name:'Airbus Acceptance Criteria & NC Documentation', category:'Specific Competency', type:'Classroom', validityMonths:24, passingScore:90},
+  {code:'MEC-01', name:'Ground Support Equipment (GSE) & Towing Safety', category:'Specific Competency', type:'Workshop', validityMonths:24, passingScore:80},
+  {code:'FOD-01', name:'Foreign Object Debris (FOD) Prevention & Control', category:'HSE', type:'Classroom/CBT', validityMonths:24, passingScore:80},
+  {code:'HSE-01', name:'Personnel & Product Safety — Site Safety Orientation', category:'HSE', type:'Classroom', validityMonths:24, passingScore:80},
+  {code:'OS1-QUAL', name:'Qualification surveillant — Famille OS1', category:'Specific Competency', type:'Supervised run (Surveillances Opérationnelles)', validityMonths:null, passingScore:null},
+  {code:'OS2-QUAL', name:'Qualification surveillant — Famille OS2', category:'Specific Competency', type:'Supervised run (Surveillances Opérationnelles)', validityMonths:null, passingScore:null},
+  {code:'OS3-QUAL', name:'Qualification surveillant — Famille OS3', category:'Specific Competency', type:'Supervised run (Surveillances Opérationnelles)', validityMonths:null, passingScore:null},
+  {code:'OS4-QUAL', name:'Qualification surveillant — Famille OS4', category:'Specific Competency', type:'Supervised run (Surveillances Opérationnelles)', validityMonths:null, passingScore:null},
+  {code:'OS5-QUAL', name:'Qualification surveillant — Famille OS5', category:'Specific Competency', type:'Supervised run (Surveillances Opérationnelles)', validityMonths:null, passingScore:null},
+  {code:'OS6-QUAL', name:'Qualification surveillant — Famille OS6', category:'Specific Competency', type:'Supervised run (Surveillances Opérationnelles)', validityMonths:null, passingScore:null},
+  {code:'OS7-QUAL', name:'Qualification surveillant — Famille OS7', category:'Specific Competency', type:'Supervised run (Surveillances Opérationnelles)', validityMonths:null, passingScore:null},
+];
+
+let trainSubs=[]; let trainSubsProj=null;
+function tr(){ return state.train; }
+function trInitState(){
+  state.train = { view:'matrix', employees:[], catalog:[], records:[], individualEmp:null };
+}
+async function trSeedIfEmpty(pid){
+  if(!state.db) return;
+  try{
+    const snap = await state.db.collection('train_catalog').where('projectId','==',pid).limit(1).get();
+    if(!snap.empty) return;
+    const writes = TRAIN_CATALOG_SEED.map(c=>state.db.collection('train_catalog').add(Object.assign({projectId:pid, createdAt:Date.now()}, c)));
+    await Promise.all(writes);
+  }catch(e){ console.warn('seed train failed', e); }
+}
+function trSubscribe(pid){
+  trainSubs.forEach(u=>{try{u();}catch(e){}}); trainSubs=[]; trainSubsProj=pid;
+  trInitState();
+  if(!state.db) return;
+  const db = state.db;
+  trSeedIfEmpty(pid);
+  trainSubs.push(db.collection('train_employees').where('projectId','==',pid).onSnapshot(qs=>{
+    tr().employees = qs.docs.map(d=>Object.assign({id:d.id}, d.data()));
+    tr().employees.sort((a,b)=>(a.lastName||'').localeCompare(b.lastName||''));
+    renderTrainBody();
+  }, e=>console.warn(e)));
+  trainSubs.push(db.collection('train_catalog').where('projectId','==',pid).onSnapshot(qs=>{
+    tr().catalog = qs.docs.map(d=>Object.assign({id:d.id}, d.data()));
+    tr().catalog.sort((a,b)=>TRAIN_CATEGORIES.indexOf(a.category)-TRAIN_CATEGORIES.indexOf(b.category) || (a.code||'').localeCompare(b.code||''));
+    renderTrainBody();
+  }, e=>console.warn(e)));
+  trainSubs.push(db.collection('train_records').where('projectId','==',pid).onSnapshot(qs=>{
+    tr().records = qs.docs.map(d=>Object.assign({id:d.id}, d.data()));
+    renderTrainBody(); renderRail();
+  }, e=>console.warn(e)));
+}
+
+/* ---- Computed status (mirrors F-720-005 Data_Center formulas) ---- */
+function trSortKey(rec){
+  if(rec.result==='L') return '9999-12-31';
+  if(rec.result==='N') return '9999-12-29';
+  return rec.completionDate || '0000-01-01';
+}
+function trLatestRecord(employeeCode, trainingCode){
+  const rows = tr().records.filter(r=>r.employeeCode===employeeCode && r.trainingCode===trainingCode);
+  if(!rows.length) return null;
+  return rows.slice().sort((a,b)=>trSortKey(a).localeCompare(trSortKey(b))).pop();
+}
+function trCatalogByCode(code){ return tr().catalog.find(c=>c.code===code); }
+function trComputeStatus(rec){
+  if(!rec) return null;
+  if(rec.result==='L') return {status:'In Progress', displayCode:'L', expiration:null};
+  if(rec.result==='N') return {status:'Need Identified', displayCode:'N', expiration:null};
+  const cat = trCatalogByCode(rec.trainingCode);
+  const validity = cat && cat.validityMonths;
+  let expiration = null;
+  if(validity && rec.completionDate){
+    const d = new Date(rec.completionDate+'T00:00:00');
+    d.setMonth(d.getMonth()+Number(validity));
+    expiration = d.toISOString().slice(0,10);
+  }
+  const expired = !!(expiration && todayISO() > expiration);
+  return {status: expired?'Expired':'Active', displayCode: expired?rec.result+'!':rec.result, expiration};
+}
+function trCellStyle(computed){
+  if(!computed) return '';
+  if(computed.status==='Expired') return `background:var(--nok-bg); color:var(--nok); font-weight:700;`;
+  if(computed.status==='Active') return `background:var(--ok-bg); color:var(--ok); font-weight:700;`;
+  if(computed.status==='In Progress') return `background:#FFF3D6; color:#8A6215; font-weight:700;`;
+  return `background:var(--na-bg); color:var(--na); font-weight:700;`; // Need Identified
+}
+
+/* ---- Mirror hook: called by Surveillances qualification changes (svCycleQual/svSetQual) ---- */
+function trMirrorSurveyorQual(surveyorName, famCode, level){
+  if(!state.db || !currentProject()) return;
+  const pid = currentProject().id;
+  const data = {projectId:pid, employeeCode:surveyorName, trainingCode: famCode+'-QUAL',
+    completionDate: (level==='N'||level==='L') ? '' : todayISO(), result: level, scorePct: null,
+    source:'surveillances', createdAt:Date.now()};
+  state.db.collection('train_records').add(data).catch(e=>console.warn('mirror qual failed', e));
+}
+
+/* ---- Employees CRUD ---- */
+async function trAddEmployee(){
+  const lastName = prompt('Nom de famille :'); if(!lastName) return;
+  const firstName = prompt('Prénom :') || '';
+  const position = prompt('Poste (ex. '+TRAIN_POSITIONS.join(' / ')+') :', TRAIN_POSITIONS[0]) || TRAIN_POSITIONS[0];
+  const pid = currentProject().id;
+  const code = 'EMP-'+uid().slice(3,9).toUpperCase();
+  const data = {projectId:pid, employeeCode:code, lastName:lastName.trim(), firstName:firstName.trim(), position, active:true, hireDate:todayISO(), createdAt:Date.now()};
+  if(state.db){ await state.db.collection('train_employees').add(data); }
+  else { tr().employees.push(Object.assign({id:uid()},data)); }
+  renderTrainBody();
+}
+function trDeleteEmployee(id){
+  if(!confirm('Retirer cet employé du registre ? (son historique de formation reste conservé)')) return;
+  tr().employees = tr().employees.filter(e=>e.id!==id); renderTrainBody();
+  if(state.db) state.db.doc('train_employees/'+id).delete().catch(()=>{});
+}
+
+/* ---- Catalog CRUD ---- */
+async function trAddCatalog(){
+  const code = prompt('Code de la compétence/formation (ex. STR-04) :'); if(!code) return;
+  const name = prompt('Nom :'); if(!name) return;
+  const category = prompt('Catégorie ('+TRAIN_CATEGORIES.join(' / ')+') :', 'Specific Competency') || 'Specific Competency';
+  const type = prompt('Méthode (Classroom / Workshop / On-the-Job / CBT / Mentoring...) :', 'Classroom') || '';
+  const validityRaw = prompt('Validité en mois (laisser vide si jamais expiré) :', '');
+  const scoreRaw = prompt('Note de passage % (laisser vide si non applicable) :', '');
+  const contentUrl = prompt('Lien vers le contenu du cours (optionnel — document/vidéo hébergé ailleurs) :', '') || '';
+  const pid = currentProject().id;
+  const data = {projectId:pid, code:code.trim().toUpperCase(), name:name.trim(), category, type,
+    validityMonths: validityRaw ? Number(validityRaw) : null, passingScore: scoreRaw ? Number(scoreRaw) : null,
+    contentUrl: contentUrl.trim(), createdAt:Date.now()};
+  if(state.db){ await state.db.collection('train_catalog').add(data); }
+  else { tr().catalog.push(Object.assign({id:uid()},data)); }
+  renderTrainBody();
+}
+function trDeleteCatalog(id){
+  if(!confirm('Retirer cette compétence du catalogue ? (l\'historique déjà enregistré reste conservé)')) return;
+  tr().catalog = tr().catalog.filter(c=>c.id!==id); renderTrainBody();
+  if(state.db) state.db.doc('train_catalog/'+id).delete().catch(()=>{});
+}
+function trEditCatalogLink(id){
+  const c = tr().catalog.find(x=>x.id===id); if(!c) return;
+  const url = prompt('Lien vers le contenu du cours :', c.contentUrl||''); if(url==null) return;
+  c.contentUrl = url.trim(); renderTrainBody();
+  if(state.db) ensureUpdate(state.db.doc('train_catalog/'+id), {contentUrl:c.contentUrl});
+}
+
+/* ---- Training record (journal) CRUD ---- */
+async function trAddRecord(){
+  if(!tr().employees.length){ alert('Ajoute au moins un employé au registre avant d\'enregistrer une formation.'); return; }
+  if(!tr().catalog.length){ alert('Ajoute au moins une compétence au catalogue avant d\'enregistrer une formation.'); return; }
+  const empList = tr().employees.map((e,i)=>`${i+1}. ${e.lastName}, ${e.firstName} (${e.employeeCode})`).join('\n');
+  const empIdx = prompt('Employé — entre le numéro :\n'+empList); if(empIdx==null) return;
+  const emp = tr().employees[parseInt(empIdx,10)-1]; if(!emp){ alert('Numéro invalide.'); return; }
+  const catList = tr().catalog.map((c,i)=>`${i+1}. ${c.code} — ${c.name}`).join('\n');
+  const catIdx = prompt('Compétence/formation — entre le numéro :\n'+catList); if(catIdx==null) return;
+  const cat = tr().catalog[parseInt(catIdx,10)-1]; if(!cat){ alert('Numéro invalide.'); return; }
+  const result = (prompt('Résultat ('+TRAIN_RESULTS.join('/')+') — '+Object.entries(TRAIN_RESULT_LABEL).map(([k,v])=>k+'='+v).join(', '), 'X') || '').toUpperCase().trim();
+  if(!TRAIN_RESULTS.includes(result)){ alert('Résultat invalide.'); return; }
+  let completionDate = '';
+  if(result!=='L' && result!=='N'){
+    completionDate = prompt('Date de complétion (AAAA-MM-JJ) :', todayISO()) || todayISO();
+  }
+  const scoreRaw = prompt('Note % (optionnel) :', '');
+  const pid = currentProject().id;
+  const data = {projectId:pid, employeeCode:emp.employeeCode, trainingCode:cat.code, completionDate,
+    result, scorePct: scoreRaw ? Number(scoreRaw) : null, source:'manual', createdAt:Date.now()};
+  if(state.db){ await state.db.collection('train_records').add(data); }
+  else { tr().records.push(Object.assign({id:uid()},data)); }
+  renderTrainBody();
+}
+
+/* ---- Mount / tabs ---- */
+function mountTrain(main){
+  const pid = currentProject().id;
+  if(trainSubsProj!==pid){ trSubscribe(pid); } else if(!state.train){ trInitState(); }
+  main.innerHTML = `<div class="mtabs" id="trTabs"></div><div class="view-pad" style="padding-top:14px;" id="trMain"></div>`;
+  renderTrainTabs(); renderTrainBody();
+}
+function renderTrainTabs(){
+  const wrap = document.getElementById('trTabs'); if(!wrap) return;
+  const tabs = [{id:'matrix', name:'Matrice de compétences'},{id:'roster', name:'Registre des employés'},{id:'catalog', name:'Catalogue de formations'},{id:'journal', name:'Journal des formations'},{id:'individual', name:'Fiche individuelle'}];
+  wrap.innerHTML = tabs.map(t=>`<button class="mtab ${tr().view===t.id?'active':''}" style="--tc:var(--m-train)" data-tab="${t.id}"><span class="sw" style="background:var(--m-train)"></span>${esc(t.name)}</button>`).join('');
+  wrap.querySelectorAll('.mtab').forEach(btn=>btn.addEventListener('click', ()=>{ tr().view=btn.dataset.tab; renderTrainTabs(); renderTrainBody(); }));
+}
+function renderTrainBody(){
+  if(state.route!=='train') return;
+  const holder = document.getElementById('trMain'); if(!holder) return;
+  if(tr().view==='roster') renderTrainRoster(holder);
+  else if(tr().view==='catalog') renderTrainCatalog(holder);
+  else if(tr().view==='journal') renderTrainJournal(holder);
+  else if(tr().view==='individual') renderTrainIndividual(holder);
+  else renderTrainMatrix(holder);
+}
+
+function renderTrainRoster(holder){
+  holder.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>Registre des employés</h2><div class="sub">Personnel suivi pour la qualification de compétences (F-720-005)</div>
+        <button class="addbtn" id="trAddEmpBtn" style="margin-left:auto">+ Employé</button></div>
+      <div class="table-wrap"><table class="mtable">
+        <thead><tr><th>ID</th><th>Nom</th><th>Prénom</th><th>Poste</th><th>Embauche</th><th></th></tr></thead>
+        <tbody>${tr().employees.length ? tr().employees.map(e=>`
+          <tr><td>${esc(e.employeeCode)}</td><td>${esc(e.lastName)}</td><td>${esc(e.firstName)}</td><td>${esc(e.position)}</td><td>${esc(e.hireDate)}</td>
+          <td><button class="linkbtn" style="color:var(--nok)" data-del="${e.id}">Suppr.</button></td></tr>`).join('')
+          : `<tr><td colspan="6" style="color:var(--ink-faint); text-align:center; padding:20px;">Aucun employé enregistré.</td></tr>`}</tbody>
+      </table></div>
+    </div>`;
+  document.getElementById('trAddEmpBtn').addEventListener('click', trAddEmployee);
+  holder.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click', ()=>trDeleteEmployee(b.dataset.del)));
+}
+
+function renderTrainCatalog(holder){
+  holder.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>Catalogue de formations &amp; compétences</h2><div class="sub">Codes, catégories AS9100 8.5.1.2 et validité — pré-rempli depuis F-720-005 / P-721</div>
+        <button class="addbtn" id="trAddCatBtn" style="margin-left:auto">+ Formation</button></div>
+      <div class="table-wrap"><table class="mtable">
+        <thead><tr><th>Code</th><th>Nom</th><th>Catégorie</th><th>Méthode</th><th>Validité</th><th>Note de passage</th><th>Contenu</th><th></th></tr></thead>
+        <tbody>${tr().catalog.length ? tr().catalog.map(c=>`
+          <tr><td>${esc(c.code)}</td><td>${esc(c.name)}</td><td>${esc(c.category)}</td><td>${esc(c.type)}</td>
+          <td>${c.validityMonths?c.validityMonths+' mois':'—'}</td><td>${c.passingScore?c.passingScore+'%':'—'}</td>
+          <td>${c.contentUrl?`<a href="${esc(c.contentUrl)}" target="_blank" rel="noopener" class="linkbtn">Ouvrir</a>`:`<button class="linkbtn" data-link="${c.id}">+ lien</button>`}</td>
+          <td><button class="linkbtn" style="color:var(--nok)" data-del="${c.id}">Suppr.</button></td></tr>`).join('')
+          : `<tr><td colspan="8" style="color:var(--ink-faint); text-align:center; padding:20px;">Catalogue vide.</td></tr>`}</tbody>
+      </table></div>
+    </div>`;
+  document.getElementById('trAddCatBtn').addEventListener('click', trAddCatalog);
+  holder.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click', ()=>trDeleteCatalog(b.dataset.del)));
+  holder.querySelectorAll('[data-link]').forEach(b=>b.addEventListener('click', ()=>trEditCatalogLink(b.dataset.link)));
+}
+
+function renderTrainJournal(holder){
+  const rows = tr().records.slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  holder.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>Journal des formations</h2><div class="sub">Historique complet — chaque ligne est conservée (une reprise ajoute une nouvelle ligne plutôt que d'écraser l'ancienne)</div>
+        <button class="addbtn" id="trAddRecBtn" style="margin-left:auto">+ Enregistrer un résultat</button></div>
+      <div class="table-wrap"><table class="mtable">
+        <thead><tr><th>Employé</th><th>Compétence</th><th>Date</th><th>Résultat</th><th>Note</th><th>Source</th></tr></thead>
+        <tbody>${rows.length ? rows.map(r=>`
+          <tr><td>${esc(r.employeeCode)}</td><td>${esc(r.trainingCode)}</td><td>${esc(r.completionDate)||'—'}</td>
+          <td><b>${esc(r.result)}</b> — ${esc(TRAIN_RESULT_LABEL[r.result]||'')}</td><td>${r.scorePct!=null?r.scorePct+'%':'—'}</td>
+          <td style="color:var(--ink-faint); font-size:12px;">${r.source==='surveillances'?'Surveillances (auto)':'Manuel'}</td></tr>`).join('')
+          : `<tr><td colspan="6" style="color:var(--ink-faint); text-align:center; padding:20px;">Aucune formation enregistrée.</td></tr>`}</tbody>
+      </table></div>
+    </div>`;
+  document.getElementById('trAddRecBtn').addEventListener('click', trAddRecord);
+}
+
+function renderTrainMatrix(holder){
+  const emps = tr().employees;
+  const cats = tr().catalog;
+  holder.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>Matrice de compétences</h2><div class="sub">Cellule colorée = résultat le plus récent. "!" sur fond rouge = qualification expirée. Survole une cellule pour le détail.</div></div>
+      <div class="table-wrap"><table class="mtable roster-table">
+        <thead><tr><th>Employé</th>${cats.map(c=>`<th title="${esc(c.name)} (${esc(c.category)})">${esc(c.code)}</th>`).join('')}</tr></thead>
+        <tbody>${emps.length ? emps.map(e=>`
+          <tr><td>${esc(e.lastName)}, ${esc(e.firstName)}</td>
+          ${cats.map(c=>{
+            const rec = trLatestRecord(e.employeeCode, c.code);
+            const computed = trComputeStatus(rec);
+            if(!computed) return `<td></td>`;
+            const title = computed.expiration ? `Expire : ${computed.expiration}` : computed.status;
+            return `<td style="${trCellStyle(computed)}" title="${esc(title)}">${esc(computed.displayCode)}</td>`;
+          }).join('')}</tr>`).join('')
+          : `<tr><td colspan="${cats.length+1}" style="color:var(--ink-faint); text-align:center; padding:20px;">Ajoute des employés pour voir la matrice.</td></tr>`}</tbody>
+      </table></div>
+    </div>`;
+}
+
+function renderTrainIndividual(holder){
+  holder.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>Fiche individuelle</h2><div class="sub">Sélectionne un employé pour générer sa fiche de qualification — imprimable (Fichier &gt; Imprimer)</div>
+        <select id="trIndivSelect" style="margin-left:auto; padding:6px 10px; border-radius:8px;">
+          <option value="">— Choisir un employé —</option>
+          ${tr().employees.map(e=>`<option value="${esc(e.employeeCode)}" ${tr().individualEmp===e.employeeCode?'selected':''}>${esc(e.lastName)}, ${esc(e.firstName)} (${esc(e.employeeCode)})</option>`).join('')}
+        </select></div>
+      <div id="trIndivBody" style="padding:14px 18px;"></div>
+    </div>`;
+  document.getElementById('trIndivSelect').addEventListener('change', (ev)=>{ tr().individualEmp = ev.target.value || null; renderTrainIndividualBody(); });
+  renderTrainIndividualBody();
+}
+function renderTrainIndividualBody(){
+  const body = document.getElementById('trIndivBody'); if(!body) return;
+  const code = tr().individualEmp;
+  if(!code){ body.innerHTML = `<div style="color:var(--ink-faint);">Aucun employé sélectionné.</div>`; return; }
+  const emp = tr().employees.find(e=>e.employeeCode===code);
+  if(!emp){ body.innerHTML = `<div style="color:var(--ink-faint);">Employé introuvable.</div>`; return; }
+  const byCat = TRAIN_CATEGORIES.map(cat=>{
+    const items = tr().catalog.filter(c=>c.category===cat);
+    if(!items.length) return '';
+    return `<div style="margin-top:14px;"><div style="font-family:var(--font-display); font-weight:600; font-size:13px; color:var(--m-train); text-transform:uppercase; letter-spacing:.03em;">${esc(cat)}</div>
+      <table class="mtable" style="margin-top:6px;"><thead><tr><th>Compétence</th><th>Résultat</th><th>Date</th><th>Expiration</th></tr></thead><tbody>
+      ${items.map(c=>{
+        const rec = trLatestRecord(code, c.code);
+        const computed = trComputeStatus(rec);
+        return `<tr><td>${esc(c.code)} — ${esc(c.name)}</td><td>${computed?`<b style="${trCellStyle(computed)}; padding:2px 6px; border-radius:4px;">${esc(computed.displayCode)}</b>`:'—'}</td><td>${rec&&rec.completionDate?esc(rec.completionDate):'—'}</td><td>${computed&&computed.expiration?esc(computed.expiration):'—'}</td></tr>`;
+      }).join('')}
+      </tbody></table></div>`;
+  }).join('');
+  body.innerHTML = `
+    <div style="display:flex; gap:24px; flex-wrap:wrap; font-size:13px;">
+      <div><b>Nom :</b> ${esc(emp.lastName)}, ${esc(emp.firstName)}</div>
+      <div><b>Poste :</b> ${esc(emp.position)}</div>
+      <div><b>ID :</b> ${esc(emp.employeeCode)}</div>
+      <div><b>Embauche :</b> ${esc(emp.hireDate)}</div>
+    </div>
+    ${byCat}`;
+}
+
+/* =========================================================================
    ADMINISTRATION  (Firebase-hosted version only — who can see which module.
    Manages the allowed_emails collection from inside the app: each doc's id
    is the person's email, holding {modules:[...], isAdmin:bool}. An admin
@@ -2730,6 +3064,7 @@ const ACCESS_MODULES = [
   {id:'sqcdpte', label:'SQCDPTE'},
   {id:'surv', label:'Surveillances'},
   {id:'nc', label:'Non-Conformités'},
+  {id:'train', label:'Formations'},
 ];
 let adminSubActive = false;
 function adminInitState(){ state.admin = { people: [] }; }
